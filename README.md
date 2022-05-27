@@ -1,6 +1,7 @@
-1. Download weights and test video from https://drive.google.com/drive/folders/1lP6Z8izAK_TyUg0TJWeWthf_I_39fFDr?usp=sharing
-2. mask classifier and age classifier are trained by two .ipynb notebooks.
-3. run get_detection.sh to get results in the root dir.
+1. download weights and test video from https://drive.google.com/drive/folders/1lP6Z8izAK_TyUg0TJWeWthf_I_39fFDr?usp=sharing
+2. download datasets to your computer. organize age dataset as I mentioned in the interview, (put images to folders accordingly as ['01-02', '03-05', '06-08', '09-12', '13-16', '17-20', '21-25', '26-30', '31-35', '36-40', '41-45', '46-50', '51-55', '56-60', '61-65', '66-70', '71-75', '76-80', '80over']).
+3. mask classifier and age classifier are trained by two .ipynb notebooks.
+4. run get_detection.sh to get results in the root dir.
 
 
 ## What's New
