@@ -49,10 +49,10 @@ def apply_classifier(x, mask_model, age_model, img, im0):
             mid = torch.tensor([1.5, 24.5, 18.5, 23, 28, 4, 33, 38, 43,
                                 48, 53, 58, 7, 63, 68, 73, 78, 85, 10.5])
             mid = torch.unsqueeze(mid, dim=1).to(d.device)
-            b = torch.softmax(age_scores, dim=1)
+            normalized_age_score = torch.softmax(age_scores, dim=1)
             # age = age_scores.argmax(1)
             #age weigted by age_scores
-            age = torch.matmul(b, mid)
+            age = torch.matmul(normalized_age_score, mid)
 
             x[i][:, 15] = mask_cls
             x[i] = torch.cat((x[i], age), 1).detach()
