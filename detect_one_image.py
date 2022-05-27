@@ -1,4 +1,7 @@
 # -*- coding: UTF-8 -*-
+import os
+from matplotlib import axes
+import torchvision
 import argparse
 import time
 from pathlib import Path
@@ -11,7 +14,8 @@ import copy
 
 from models.experimental import attempt_load
 from utils.datasets import letterbox
-from utils.general import check_img_size, non_max_suppression_face, apply_classifier, scale_coords, xyxy2xywh, \
+from additional import apply_classifier, show_results
+from utils.general import check_img_size, non_max_suppression_face, scale_coords, xyxy2xywh, \
     strip_optimizer, set_logging, increment_path
 from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized
@@ -47,34 +51,33 @@ def scale_coords_landmarks(img1_shape, coords, img0_shape, ratio_pad=None):
     coords[:, 9].clamp_(0, img0_shape[0])  # y5
     return coords
 
-def show_results(img, xyxy, conf, landmarks, class_num):
-    h,w,c = img.shape
-    tl = 1 or round(0.002 * (h + w) / 2) + 1  # line/font thickness
-    x1 = int(xyxy[0])
-    y1 = int(xyxy[1])
-    x2 = int(xyxy[2])
-    y2 = int(xyxy[3])
-    cv2.rectangle(img, (x1,y1), (x2, y2), (0,255,0), thickness=tl, lineType=cv2.LINE_AA)
 
-    clors = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(0,255,255)]
 
-    for i in range(5):
-        point_x = int(landmarks[2 * i])
-        point_y = int(landmarks[2 * i + 1])
-        cv2.circle(img, (point_x, point_y), tl+1, clors[i], -1)
-
-    tf = max(tl - 1, 1)  # font thickness
-    label = str(conf)[:5]
-    cv2.putText(img, label, (x1, y1 - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
-    return img
 
 
 
 def detect_one(model, image_path, device):
     # Load model
-    img_size = 800
-    conf_thres = 0.3
+    img_size = 1280
+    conf_thres = 0.2
     iou_thres = 0.5
+
+    mask_model = torchvision.models.resnet18(pretrained=False)
+    num_ftrs = mask_model.fc.in_features
+    num_classes = 2
+    mask_model.fc = torch.nn.Linear(num_ftrs, num_classes)
+    mask_model.load_state_dict(torch.load('../pytorch-image-classification/mask_cls.pt'))
+    mask_model.eval()
+    mask_model = mask_model.to(device)
+
+
+    age_model = torchvision.models.resnet50(pretrained=False)
+    num_ftrs = age_model.fc.in_features
+    num_classes = 19
+    age_model.fc = torch.nn.Linear(num_ftrs, num_classes)
+    age_model.load_state_dict(torch.load('../pytorch-image-classification/age_4.pt', map_location=device))
+    age_model.eval()
+    age_model = age_model.to(device)
 
     orgimg = cv2.imread(image_path)  # BGR
     img0 = copy.deepcopy(orgimg)
@@ -86,8 +89,10 @@ def detect_one(model, image_path, device):
         img0 = cv2.resize(img0, (int(w0 * r), int(h0 * r)), interpolation=interp)
 
     imgsz = check_img_size(img_size, s=model.stride.max())  # check img_size
+    # print(img0[-200,-200,:], img0.shape)
 
     img = letterbox(img0, new_shape=imgsz)[0]
+
     # Convert
     img = img[:, :, ::-1].transpose(2, 0, 1).copy()  # BGR to RGB, to 3x416x416
 
@@ -102,10 +107,19 @@ def detect_one(model, image_path, device):
 
     # Inference
     t1 = time_synchronized()
+    # print(img[:,:,-200,-200])
+    # exit()
     pred = model(img)[0]
+    # print(pred)
 
     # Apply NMS
     pred = non_max_suppression_face(pred, conf_thres, iou_thres)
+    # print(pred)
+    # exit()
+    names = ['mask', 'nomask']
+    # print(len(pred[0]))
+    # exit()
+    pred = apply_classifier(pred, mask_model, age_model, img, img0)
 
     print('img.shape: ', img.shape)
     print('orgimg.shape: ', orgimg.shape)
@@ -125,9 +139,12 @@ def detect_one(model, image_path, device):
             for j in range(det.size()[0]):
                 xyxy = det[j, :4].view(-1).tolist()
                 conf = det[j, 4].cpu().numpy()
+                # cls = det[j, 5].cpu().numpy()
                 landmarks = det[j, 5:15].view(-1).tolist()
-                class_num = det[j, 15].cpu().numpy()
-                orgimg = show_results(orgimg, xyxy, conf, landmarks, class_num)
+                class_num = int(det[j, 15].cpu().numpy().item())
+                age_num = int(det[j, 16].cpu().numpy().item())
+
+                orgimg = show_results(orgimg, xyxy, conf,landmarks, class_num, age_num)
 
     cv2.imwrite('result.jpg', orgimg)
 
@@ -136,8 +153,8 @@ def detect_one(model, image_path, device):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default='runs/train/exp5/weights/last.pt', help='model.pt path(s)')
-    parser.add_argument('--image', type=str, default='data/images/test.jpg', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--weights', nargs='+', type=str, default='./yolov5m-face.pt', help='model.pt path(s)')
+    parser.add_argument('--image', type=str, default='./_113298561_a6a17a72-013c-4d04-ae38-542e6f78ea44.jpg', help='source')  # file/folder, 0 for webcam
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     opt = parser.parse_args()
     print(opt)
