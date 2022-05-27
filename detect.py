@@ -40,14 +40,12 @@ from pathlib import Path
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
-import logging
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
-logger = logging.getLogger(__name__)
 
 def load_model(weights, device):
     model = attempt_load(weights, map_location=device)  # load FP32 model
@@ -95,16 +93,11 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
     # Directories
     save_dir = increment_path(Path(project) / name,
                               exist_ok=exist_ok)  # increment run
-    # (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True,
-    #                                                       exist_ok=True)  # make dir
 
     # Load model
     device = select_device(device)
-    # model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
     model = load_model(opt.weights, device)
 
-    stride, names = model.stride, model.names
-    # imgsz = check_img_size(imgsz, s=stride)  # check image size
 
     # Dataloader
     if webcam:
@@ -112,6 +105,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz)
         bs = len(dataset)  # batch_size
+        s = source
     else:
         dataset = LoadImages(source, img_size=imgsz)
         bs = 1  # batch_size
@@ -136,11 +130,8 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
     age_model = age_model.to(device)
 
     # Run inference
-    # model.warmup(imgsz=(1 if pt else bs, 3, *imgsz))  # warmup
     dt, seen = [0.0, 0.0, 0.0], 0
-    for path, im, im0s, vid_cap in dataset:
-        # print(im[:,-200,-200])
-
+    for path, im, im0s, vid_cap, s in dataset:
         t1 = time_synchronized()
         im = torch.from_numpy(im).to(device)
         im = im.float()
@@ -152,43 +143,32 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
 
         # Inference
         visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
-        # print(im[:,:,-200,-200])
-        # exit()
 
         pred = model(im)[0]
         t3 = time_synchronized()
         dt[1] += t3 - t2
-        # print(pred)
 
         # NMS
-        # pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
         pred = non_max_suppression_face(pred, conf_thres, iou_thres)
-        # print(pred)
-        # exit()
 
         dt[2] += time_synchronized() - t3
 
-        # pred, cut_out = apply_classifier_cutout(pred, mask_model, im, im0s)
         pred = additional.apply_classifier(pred, mask_model, age_model, im, im0s)
 
-        # print(pred)
-        # exit()
+
         # Process predictions
         for i, det in enumerate(pred):  # per image
             seen += 1
             if webcam:  # batch_size >= 1
                 p, im0, frame = path[i], im0s[i].copy(), dataset.count
-                # s += f'{i}: '
+                s += f'{frame}: '
+                # s +='  '
             else:
                 p, im0, frame = path, im0s.copy(), getattr(dataset, 'frame', 0)
 
             p = Path(p)  # to Path
-            # save_path = str(save_dir / p.name)  # im.jpg
-            # save_path_1 = []
-            # txt_path = str(save_dir / 'labels' / p.stem) + \
-            #     ('' if dataset.mode == 'image' else f'_{frame}')  # im.txt
-            # s += '%gx%g ' % im.shape[2:]  # print string
-            # normalization gain whwh
+
+            s += '%gx%g ' % im.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]
             imc = im0.copy() if save_crop else im0  # for save_crop
             # annotator = Annotator(im0, line_width=line_thickness, example=str(names))
@@ -198,50 +178,29 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
                     im.shape[2:], det[:, :4], im0.shape).round()
 
                 # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    # add to string
-                    # s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "
+
+                s += f"{len(det)} {'face'}{'s' * (len(det) > 1)}, "
         
                 det[:, 5:15] = additional.scale_coords_landmarks(im.shape[2:], det[:, 5:15], im0.shape).round()
-
-                # Write results
-                # for *xyxy, conf, cls in reversed(det):
-
-                #     if save_img or save_crop or view_img:  # Add bbox to image
-                #         c = int(cls)  # integer class
-                #         label = None if hide_labels else (
-                #             names[c] if hide_conf else f'{names[c]} {conf:.2f}')
-
                 for j in range(det.size()[0]):
                     xyxy = det[j, :4].view(-1).tolist()
                     conf = det[j, 4].cpu().numpy()
-                    # cls = det[j, 5].cpu().numpy()
                     landmarks = det[j, 5:15].view(-1).tolist()
                     class_num = int(det[j, 15].cpu().numpy().item())
-                    # print(class_num)
                     age_num = int(det[j, 16].cpu().numpy().item())
 
-                    # exit()
                     im0 = additional.show_results(
                         im0, xyxy, conf, landmarks, class_num, age_num)
 
-                        # # annotator.box_label(xyxy, label, color=colors(c, True))
-                        # if save_crop:
-                        #     save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
-
+ 
             # Stream results
-            # im0 = annotator.result()
             if view_img:
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
 
             # Save results (image with detections)
 
-
             if save_img:
-                # print(dataset.mode)
-                # exit()
                 if dataset.mode == 'image':
                     cv2.imwrite('./result.jpg', im0)
 
@@ -265,15 +224,13 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
                     vid_writer[i].write(im0)
 
         # Print time (inference-only)
-        # logger.info(f'{s}Done. ({t3 - t2:.3f}s)')
+        print(f'{s}Done. ({t3 - t2:.3f}s)')
 
     # Print results
     t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
-    logger.info(
+    print(
         f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {(1, 3, *imgsz)}' % t)
-    # if save_txt or save_img:
-    #     s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
-    #     logger.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
+
     if update:
         strip_optimizer(weights)  # update model (to fix SourceChangeWarning)
 
