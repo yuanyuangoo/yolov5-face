@@ -1,3 +1,8 @@
+1. Download weights and test video from https://drive.google.com/drive/folders/1lP6Z8izAK_TyUg0TJWeWthf_I_39fFDr?usp=sharing
+2. mask classifier and age classifier are trained by two .ipynb notebooks.
+3. run get_detection.sh to get results in the root dir.
+
+
 ## What's New
 
 **2021.12**: Yolov5-face to TensorRT. 
